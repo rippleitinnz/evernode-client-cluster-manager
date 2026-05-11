@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Backup files (everywhere)
+*.bak
+*.bak-*
+*.bak.*
+*.working-*
+*BU
+index.js[0-9]*

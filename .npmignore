@@ -1,0 +1,5 @@
+dist/*.working*
+dist/*.bak*
+dist/*.bk*
+src/
+*.sh
