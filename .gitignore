@@ -23,3 +23,5 @@ Thumbs.db
 *.working-*
 *BU
 index.js[0-9]*
+*.pre-*
+*.pre.*

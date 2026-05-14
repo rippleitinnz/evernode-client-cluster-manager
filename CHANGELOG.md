@@ -5,6 +5,23 @@ All notable changes to `evernode-client-cluster-manager` will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] — 2026-05-14
+
+### Removed
+
+- **`purgePeers` handler.** Used hpcore's OVERWRITE mode (`ctx.updatePeers(peers, "*")`) which is fundamentally unsafe to invoke from a multi-node contract: every UNL node runs the handler in the same consensus round, so every node tears down all live peer sessions simultaneously. This collapses the cluster. The handler had no safe usage pattern and was a footgun for any downstream contract that imported the package and exposed the input type. The ghost-peer use case it was originally designed for is now handled correctly by `removeNode` and `removePeer` (since 1.2.1) using FORCE mode on a single peer at a time.
+
+### Cleaned up
+
+- Removed orphan `heartbeat()` function (defined but never called from `init()`; downstream contracts implement their own keepalives if needed).
+- Removed unused `HP_CLIENT_TIMEOUT` constant.
+- Removed dead `HEARTBEAT_INTERVAL` constant (only used by the removed `heartbeat()`).
+- Cleaned `/***N;***/` inline comment artefacts on threshold constants.
+
+### Handler count
+
+Down from 15 to 14 user-facing handlers (9 readonly + 5 consensus). `matured` is consensus but is a node-to-node signal, not a user-facing operation.
+
 ## [1.2.1] — 2026-05-11
 
 ### Fixed
@@ -37,4 +54,5 @@ Earlier work included attempts at ghost-peer cleanup using OVERWRITE-mode peer u
 
 There may still be unused helper code in `src/index.js` left over from those earlier approaches. A code audit is planned.
 
+[1.2.2]: https://github.com/rippleitinnz/evernode-client-cluster-manager/releases/tag/v1.2.2
 [1.2.1]: https://github.com/rippleitinnz/evernode-client-cluster-manager/releases/tag/v1.2.1

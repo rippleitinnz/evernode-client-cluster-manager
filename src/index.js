@@ -25,7 +25,7 @@
  *   status, readCfg, readPatchCfg, readEnvVars, readLog, readContractLog
  *
  * Consensus handlers (all UNL nodes must agree):
- *   upgrade, addNode, removeNode, removePeer, purgePeers
+ *   upgrade, addNode, removeNode, removePeer
  *
  * Autonomous handlers (no user input required):
  *   matured (received from new non-UNL node)
@@ -51,11 +51,9 @@ const BACKUP_PREFIX                 = 'backup';
 const MAX_BACKUPS                   = 5;
 const CLUSTER_JSON                  = 'cluster.json';
 const CLUSTER_INFO                  = '../../seed/cluster.info'; // bootstrap file for new node, outside consensus state
-const MATURITY_LCL_THRESHOLD        = 8; /***2;***/
+const MATURITY_LCL_THRESHOLD        = 8;
 const MAX_ACKNOWLEDGE_ATTEMPTS      = 3;
-const ACKNOWLEDGE_RETRY_LCL_THRESHOLD = 8; /***5;***/
-const HP_CLIENT_TIMEOUT             = 30000;
-const HEARTBEAT_INTERVAL            = 10; // Every 10 ledgers
+const ACKNOWLEDGE_RETRY_LCL_THRESHOLD = 8;
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -512,26 +510,6 @@ const handleRemovePeer = async (user, msg, ctx, version) => {
 };
 
 /**
- * handlePurgePeers — sends a peer_changeset OVERWRITE control message to hpcore.
- * Clears the in-memory peer table (including ghost peers from removed nodes)
- * and resets it to only the current UNL peers from cluster.json.
- * Uses ctx.updatePeers(add, "*") which sets remove="*" triggering OVERWRITE mode in hpcore.
- */
-const handlePurgePeers = async (user, ctx, version) => {
-    try {
-        const cluster = loadCluster();
-        const peers = cluster.nodes
-            .filter(n => n.isUnl && n.pubkey !== ctx.publicKey && n.domain && n.peerPort)
-            .map(n => `${n.domain}:${n.peerPort}`);
-        await ctx.updatePeers(peers, "*");
-        console.log(`[ClusterManager] Peer table purged and reset to: ${peers.join(', ')}`);
-        await send(user, { type: 'purgePeers', status: 'ok', version, peers });
-    } catch(e) {
-        await send(user, { type: 'error', message: e.message });
-    }
-};
-
-/**
  * handleMatured — called when a non-UNL node connects and sends MATURED.
  * Marks the node as acknowledged in cluster.json.
  * After MATURITY_LCL_THRESHOLD ledgers, checkAndPromoteMatured will add to UNL.
@@ -721,11 +699,6 @@ const checkAndSendMatured = async (ctx) => {
     saveCluster(cluster);
 };
 
-const heartbeat = (ctx) => {
-    if (ctx.lclSeqNo % HEARTBEAT_INTERVAL === 0)
-        console.log(`[ClusterManager] ♥ lcl:${ctx.lclSeqNo}`);
-};
-
 // ── Public API ─────────────────────────────────────────────────
 
 const init = async (ctx, version) => {
@@ -792,9 +765,6 @@ const init = async (ctx, version) => {
                         return true;
                     case 'removePeer':
                         await handleRemovePeer(user, msg, ctx, version);
-                        return true;
-                    case 'purgePeers':
-                        await handlePurgePeers(user, ctx, version);
                         return true;
                     case 'matured':
                         await handleMatured(user, msg, ctx, version);
