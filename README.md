@@ -12,38 +12,66 @@ The ghost-peer cleanup it was designed to address is now handled correctly and a
 
 Ghost peer retries after node removal. `handleRemoveNode` now flushes hpcore's `req_known_remotes` via `ctx.updatePeers([], [peerStr])` so removed nodes don't generate endless `Trying to connect <removed-node>` retries every ~4 seconds. `handleRemovePeer` does the same for manual cleanup of stale entries.
 
-## Install
+## Project setup
+
+The package is a `require()` inside your contract code. Your contract lives in its own directory with a `package.json` and `index.js`. From an empty directory:
 
 ```bash
-npm install evernode-client-cluster-manager
+mkdir my-contract && cd my-contract
+npm init -y
+npm install hotpocket-nodejs-contract@0.7.4 evernode-client-cluster-manager
+```
+
+> The `npm init -y` step is mandatory. Without a `package.json` in the current directory, npm walks up looking for a parent project, finds one, and silently installs nothing — `node_modules/` is never created. If `npm install` reports "up to date, audited N packages" and no files appear, this is why.
+
+Final layout:
+
+```
+my-contract/
+├── package.json
+├── index.js
+└── node_modules/
+    ├── hotpocket-nodejs-contract/
+    └── evernode-client-cluster-manager/
 ```
 
 ## Usage
 
 ```js
-const HotPocket = require('hotpocket-nodejs-contract');
+'use strict';
+const HotPocket      = require('hotpocket-nodejs-contract');
 const ClusterManager = require('evernode-client-cluster-manager');
 
 const VERSION = '1.0.0';
 
 const contract = async (ctx) => {
-  // One line — registers all handlers.
-  // Returns true if a management command was handled — return early so your
-  // business logic is skipped for that round.
-  if (await ClusterManager.init(ctx, VERSION)) return;
+    // One line — registers all handlers.
+    // Returns true if a management command was handled — return early so your
+    // business logic is skipped for that round.
+    if (await ClusterManager.init(ctx, VERSION)) return;
 
-  // Your business logic here
+    // Your business logic here
 };
 
 const hpc = new HotPocket.Contract();
 hpc.init(contract);
 ```
 
-Then build with ncc and deploy as normal:
+## Deployment
+
+You have two paths to a running cluster:
+
+**Using the CLI tool (recommended):** [evernode-cluster-manager](https://github.com/rippleitinnz/evernode-cluster-manager) handles multi-node acquisition, bundling, deployment, live upgrades and ongoing cluster management. Point it at your contract directory when prompted for "Use my own contract directory" — the CLI runs `npm install`, ensures the correct ncc bundle is in place, and deploys.
+
+**Manual deployment with evdevkit:** if you're driving Evernode directly:
 
 ```bash
-npx ncc build src/index.js -o dist
+# Bundle and deploy the contract
+evdevkit bundle my-contract <pubkey> /usr/bin/node -a index.js
+evdevkit deploy bundle.zip <domain> <user_port>
 ```
+
+For multi-node clusters, manual deployment quickly becomes impractical — the bootstrap peer, UNL injection, and MATURED-flow timing are what the CLI tool exists to automate.
 
 ## Handlers
 
@@ -110,8 +138,8 @@ All inputs are JSON strings sent via `submitContractReadRequest` (readonly) or `
 - Never use non-deterministic values (`Date.now`, `Math.random`) in consensus handler outputs
 - Always keep a `VERSION` constant and bump it on every upgrade so the cluster manager can track versions
 - Never remove any handler — the cluster manager client depends on them
-- The `upgrade` handler expects a valid `bundle.zip` containing `dist/index.js` built with `ncc`
-- `ctx.updatePeers(peers, "*")` is **not safe** to use from any consensus handler — it triggers hpcore OVERWRITE mode which closes all live peer sessions on every UNL node simultaneously. This is why 1.2.2 removed the `purgePeers` handler entirely.
+- The `upgrade` handler expects a valid `bundle.zip` containing the contract files
+- `ctx.updatePeers(peers, "*")` is **not safe** to use from any consensus handler — it triggers hpcore OVERWRITE mode which closes all live peer sessions on every UNL node simultaneously. This is why 1.2.2 removed the `purgePeers` handler entirely
 
 ## Requirements
 
