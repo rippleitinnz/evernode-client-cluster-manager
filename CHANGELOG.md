@@ -5,6 +5,30 @@ All notable changes to `evernode-client-cluster-manager` will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] — 2026-05-19
+
+### Fixed
+
+- **MATURED flow now works correctly.** `checkAndSendMatured` uses `require('hotpocket-js-client')` which was previously a dynamic inline require inside the function body. ncc cannot statically bundle dynamic requires, so the module was never included in the compiled output and the function silently failed every round. Moved to a top-level static require so ncc bundles it correctly.
+
+- **`CLUSTER_INFO` path corrected.** The constant `../../seed/cluster.info` never resolved to a valid path inside the contract container — `cluster.info` was never read. The new node always fell back to `loadCluster()` reading `cluster.json` from HPFS-synced state. This worked incidentally but meant new nodes had no peer list until HPFS sync completed.
+
+### Added
+
+- **Full peer mesh maintenance via `patch.cfg`.** On every `addNode`, `removeNode`, and node promotion, the full UNL peer list is written to `patch.cfg` `mesh.known_peers` via `ctx.updateConfig()`. This is the correct authoritative mechanism — `patch.cfg` is what hpcore reads on startup. Previously nodes only had their single bootstrap peer in `known_peers`, meaning a cold restart with a dead bootstrap peer left the node isolated.
+
+- **`checkAndPromoteMatured` updates full peer list via `ctx.updatePeers`.** After promoting a new node to UNL, all existing UNL nodes receive the complete peer list as a live update — not just the single new peer as before.
+
+### Changed
+
+- **`cluster.info` written with full UNL peer list** (previously only anchor node + new node). No memo size constraint applies here — `cluster.info` is a bundle file, not a transaction memo. Gives new nodes multiple peers to try when sending MATURED, eliminating dependency on a single bootstrap peer.
+
+### Removed
+
+- `updateHpCfgPeers` helper (direct `/contract/cfg/hp.cfg` write). hpcore overwrites `hp.cfg` each consensus round from `patch.cfg`, so direct writes do not persist. The correct persistence mechanism is `ctx.updateConfig()` writing to `patch.cfg`.
+
+---
+
 ## [1.2.2] — 2026-05-14
 
 ### Removed
@@ -54,5 +78,6 @@ Earlier work included attempts at ghost-peer cleanup using OVERWRITE-mode peer u
 
 There may still be unused helper code in `src/index.js` left over from those earlier approaches. A code audit is planned.
 
+[1.3.0]: https://github.com/rippleitinnz/evernode-client-cluster-manager/releases/tag/v1.3.0
 [1.2.2]: https://github.com/rippleitinnz/evernode-client-cluster-manager/releases/tag/v1.2.2
 [1.2.1]: https://github.com/rippleitinnz/evernode-client-cluster-manager/releases/tag/v1.2.1

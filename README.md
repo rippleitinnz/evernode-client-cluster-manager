@@ -2,7 +2,17 @@
 
 Drop-in npm module that adds 14 cluster management handlers to any HotPocket contract running on Evernode. Designed for use with the [Evernode Cluster Manager](https://github.com/rippleitinnz/evernode-cluster-manager) client tool but works with any HP JS client.
 
-## What's new in 1.2.2
+## What's new in 1.3.0
+
+**MATURED flow now works correctly.** The `checkAndSendMatured` function uses `hotpocket-js-client` to connect to existing UNL nodes and send the MATURED signal. Previously this was a dynamic inline `require()` inside the function body — ncc cannot statically bundle dynamic requires, so the module was silently missing from the compiled output and the function failed every round without error. Moved to a top-level static require so ncc bundles it correctly.
+
+**Full peer mesh maintenance.** On every `addNode`, `removeNode`, and node promotion, the full UNL peer list is written to `patch.cfg` `mesh.known_peers` via `ctx.updateConfig()`. Previously nodes only had their single bootstrap peer in `known_peers`, meaning a cold restart with a dead bootstrap peer left the node completely isolated. `patch.cfg` is the correct persistence mechanism — hpcore reads it on startup and applies it over `hp.cfg`.
+
+**`cluster.info` written with full UNL peer list.** Previously `cluster.info` contained only the anchor node and the new node. Now it contains all current UNL nodes, giving new nodes multiple peers to try when connecting and sending MATURED. No memo size constraint applies here — `cluster.info` is a bundle file, not a transaction memo.
+
+**`checkAndPromoteMatured` updates full peer list via `ctx.updatePeers`.** After promoting a new node to UNL, all existing UNL nodes receive the complete peer list as a live update — not just the single new peer as before.
+
+## What 1.2.2 fixed
 
 Removed the `purgePeers` handler. It used hpcore's OVERWRITE mode (`ctx.updatePeers(peers, "*")`) which clears the entire `req_known_remotes` table and closes all live peer sessions at once. When sent simultaneously to every UNL node — which is what consensus does — every node tore down every peer connection in the same round, collapsing the cluster. The handler had no safe usage pattern from a multi-node contract.
 
@@ -94,8 +104,8 @@ For multi-node clusters, manual deployment quickly becomes impractical — the b
 | Type | Description |
 |------|-------------|
 | `upgrade` | Deploy new contract bundle via base64, runs `post_exec.sh` |
-| `addNode` | Register a new node as non-UNL pending MATURED signal |
-| `removeNode` | Remove pubkey from UNL, clean `patch.cfg.known_peers`, and flush hpcore's `req_known_remotes` to stop retry spam |
+| `addNode` | Register a new node as non-UNL pending MATURED signal. Writes full UNL peer list to `patch.cfg` `known_peers` for cold restart resilience |
+| `removeNode` | Remove pubkey from UNL, update `patch.cfg.known_peers`, and flush hpcore's `req_known_remotes` to stop retry spam |
 | `removePeer` | Manual cleanup: flush a peer from `patch.cfg.known_peers` and `req_known_remotes` without UNL changes. Useful for orphan entries |
 | `matured` | Received from a non-UNL node when it has synced — marks it as acknowledged. Promoted to UNL after `MATURITY_LCL_THRESHOLD` ledgers |
 
@@ -106,8 +116,8 @@ Consensus handlers require all UNL nodes to agree before executing.
 
 These run on every consensus round inside `init()`:
 
-- **`checkAndPromoteMatured`** — promotes acknowledged nodes to UNL after stability threshold. Also prunes nodes stuck in `status: created` for more than 5 moments (never acknowledged, definitively failed).
-- **`checkAndSendMatured`** — runs on non-UNL nodes. Connects to UNL nodes and sends MATURED signal when synced. Retries up to 3 times.
+- **`checkAndPromoteMatured`** — promotes acknowledged nodes to UNL after stability threshold. Writes full peer list to `patch.cfg` via `ctx.updateConfig()` and broadcasts full peer list via `ctx.updatePeers()` after each promotion. Also prunes nodes stuck in `status: created` for more than 5 moments (never acknowledged, definitively failed).
+- **`checkAndSendMatured`** — runs on non-UNL nodes. Reads `cluster.info` (full UNL peer list) to find existing nodes, connects and sends MATURED signal when synced. Retries up to 3 times.
 
 ## Input format
 
