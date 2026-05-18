@@ -94,7 +94,6 @@ const saveCluster = (data) => {
     fs.writeFileSync(CLUSTER_JSON, JSON.stringify(data, null, 2));
 };
 
-
 // ── patch.cfg helpers ──────────────────────────────────────────
 
 const addPeerToPatchCfg = (domain, peerPort) => {
@@ -415,6 +414,19 @@ const handleAddNode = async (user, msg, ctx, version) => {
             addPeerToPatchCfg(ip, peerPort);
         }
 
+        // Update patch.cfg known_peers with full UNL peer list for cold restart resilience
+        try {
+            const patchCfg = await ctx.getConfig();
+            if (!patchCfg.mesh) patchCfg.mesh = {};
+            patchCfg.mesh.known_peers = cluster.nodes
+                .filter(n => n.isUnl && n.domain && n.peerPort)
+                .map(n => `${n.domain}:${n.peerPort}`);
+            await ctx.updateConfig(patchCfg);
+            console.log(`[ClusterManager] Updated patch.cfg known_peers (${patchCfg.mesh.known_peers.length} peers)`);
+        } catch(e) {
+            console.log(`[ClusterManager] patch.cfg peer update failed: ${e.message}`);
+        }
+
         await send(user, { type: 'addNode', status: 'ok', version, lcl: ctx.lclSeqNo });
     } catch(e) {
         await send(user, { type: 'error', message: e.message });
@@ -449,6 +461,19 @@ const handleRemoveNode = async (user, msg, ctx, version) => {
         const node = cluster.nodes.find(n => n.pubkey === pubkey);
         cluster.nodes = cluster.nodes.filter(n => n.pubkey !== pubkey);
         saveCluster(cluster);
+
+        // Update patch.cfg known_peers with remaining UNL peers for cold restart resilience
+        try {
+            const patchCfg = await ctx.getConfig();
+            if (!patchCfg.mesh) patchCfg.mesh = {};
+            patchCfg.mesh.known_peers = cluster.nodes
+                .filter(n => n.isUnl && n.domain && n.peerPort)
+                .map(n => `${n.domain}:${n.peerPort}`);
+            await ctx.updateConfig(patchCfg);
+            console.log(`[ClusterManager] Updated patch.cfg known_peers (${patchCfg.mesh.known_peers.length} peers)`);
+        } catch(e) {
+            console.log(`[ClusterManager] patch.cfg peer update failed: ${e.message}`);
+        }
 
         // Remove peer from patch.cfg AND from hpcore's live req_known_remotes
         let peerStr = null;
@@ -611,19 +636,34 @@ const checkAndPromoteMatured = async (ctx) => {
 
     if (changed) {
         saveCluster(cluster);
-        // Update peers on existing UNL nodes to include the new node
-        if (node.domain && node.peerPort) {
-            await ctx.updatePeers([`${node.domain}:${node.peerPort}`]);
-            console.log(`[ClusterManager] Added peer after promotion: ${node.domain}:${node.peerPort}`);
+        // Update ALL UNL peers on every node after promotion so full mesh is maintained.
+        // Every node gets the complete peer list — cold restarts will always find peers.
+        const fullPeerList = cluster.nodes
+            .filter(n => n.isUnl && n.domain && n.peerPort)
+            .map(n => `${n.domain}:${n.peerPort}`);
+        if (fullPeerList.length > 0) {
+            await ctx.updatePeers(fullPeerList);
+            console.log(`[ClusterManager] Updated full peer mesh (${fullPeerList.length} peers): ${fullPeerList.join(', ')}`);
         }
     }
+        // Update patch.cfg known_peers after promotion for cold restart resilience
+        try {
+            const patchCfg = await ctx.getConfig();
+            if (!patchCfg.mesh) patchCfg.mesh = {};
+            patchCfg.mesh.known_peers = cluster.nodes
+                .filter(n => n.isUnl && n.domain && n.peerPort)
+                .map(n => `${n.domain}:${n.peerPort}`);
+            await ctx.updateConfig(patchCfg);
+            console.log(`[ClusterManager] Updated patch.cfg known_peers after promotion (${patchCfg.mesh.known_peers.length} peers)`);
+        } catch(e) {
+            console.log(`[ClusterManager] patch.cfg peer update after promotion failed: ${e.message}`);
+        }
 };
 
 /**
  * checkAndSendMatured — runs every consensus round on non-UNL nodes.
  * If this node is not in the UNL, connects to UNL nodes and sends MATURED.
  */
-
 const checkAndSendMatured = async (ctx) => {
     // Check if this node is in the UNL
     const isInUnl = ctx.unl.find(ctx.publicKey);
