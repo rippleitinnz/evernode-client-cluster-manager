@@ -1,5 +1,20 @@
 # Changelog
 
+----
+
+## [1.3.1] — 2026-05-19
+
+### Added
+
+- **Dynamic log level from `hp.cfg.override` in `handleUpgrade`.** When `hp.cfg.override` contains a `log` section with `log_level`, the upgrade handler now passes it through to `contract.config` and the `post_exec.sh` script applies it dynamically via `jq`. Previously `post_exec.sh` had `log_level` hardcoded to `"dbg"` — now it reads the value from `contract.config` at runtime. Note: takes effect on next container restart on current hpcore versions. A hpcore PR ([EvernodeXRPL/hpcore](https://github.com/EvernodeXRPL/hpcore)) has been raised to allow dynamic log level change without restart.
+
+- **Dynamic roundtime from `hp.cfg.override` in `handleUpgrade`.** When `hp.cfg.override` contains `contract.consensus.roundtime`, the upgrade handler now stores it in `contract.config` and `post_exec.sh` applies it to `patch.cfg` via `jq`. hpcore reads `consensus.roundtime` dynamically from `patch.cfg` each ledger — confirmed taking effect within one consensus round on a live cluster without any container restart.
+
+### Fixed
+
+- **DEP0128 deprecation warning fixed.** Corrected `"main"` field in `package.json` from `"dist/index.js"` to `"index.js"` and added `"type": "commonjs"`. The contract build script copies the ncc bundle directly to the package root (not into a `dist/` subdirectory), so the previous `main` path was wrong. Node.js 20 was logging `Invalid 'main' field` to `rw.stderr.log` every contract execution round. Warning is now gone.
+
+
 All notable changes to `evernode-client-cluster-manager` will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),

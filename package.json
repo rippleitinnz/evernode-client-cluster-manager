@@ -1,8 +1,8 @@
 {
   "name": "evernode-client-cluster-manager",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "Drop-in management handler module for HotPocket contracts on Evernode.",
-  "main": "dist/index.js",
+  "main": "index.js",
   "files": [
     "dist/index.js",
     "dist/blake3_js_bg.wasm"
@@ -29,5 +29,6 @@
   "bugs": {
     "url": "https://github.com/rippleitinnz/evernode-client-cluster-manager/issues"
   },
-  "homepage": "https://github.com/rippleitinnz/evernode-client-cluster-manager#readme"
+  "homepage": "https://github.com/rippleitinnz/evernode-client-cluster-manager#readme",
+  "type": "commonjs"
 }

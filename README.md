@@ -2,21 +2,29 @@
 
 Drop-in npm module that adds 14 cluster management handlers to any HotPocket contract running on Evernode. Designed for use with the [Evernode Cluster Manager](https://github.com/rippleitinnz/evernode-cluster-manager) client tool but works with any HP JS client.
 
+## What's new in 1.3.1
+
+**Dynamic round time via `hp.cfg.override`.** When `hp.cfg.override` contains `contract.consensus.roundtime`, the upgrade handler stores it in `contract.config` and `post_exec.sh` applies it to `patch.cfg` via `jq`. hpcore reads `consensus.roundtime` dynamically from `patch.cfg` each ledger — confirmed taking effect within one consensus round on a live cluster without any container restart.
+
+**Dynamic log level via `hp.cfg.override`.** When `hp.cfg.override` contains `log.log_level`, the upgrade handler now passes it through to `contract.config` and `post_exec.sh` applies it dynamically. Previously `post_exec.sh` had log level hardcoded to `"dbg"`. Note: log level takes effect on next container restart on current hpcore versions — a hpcore PR has been raised ([EvernodeXRPL/hpcore](https://github.com/EvernodeXRPL/hpcore)) to allow dynamic log level change without restart.
+
+**DEP0128 deprecation warning fixed.** Corrected `"main"` field in `package.json` from `"dist/index.js"` to `"index.js"` and added `"type": "commonjs"`. The contract build script copies the ncc bundle to the package root — not into a `dist/` subdirectory — so the `main` path was pointing to the wrong location. Node.js 20 flagged this every round. Warning is now gone.
+
 ## What's new in 1.3.0
 
 **MATURED flow now works correctly.** The `checkAndSendMatured` function uses `hotpocket-js-client` to connect to existing UNL nodes and send the MATURED signal. Previously this was a dynamic inline `require()` inside the function body — ncc cannot statically bundle dynamic requires, so the module was silently missing from the compiled output and the function failed every round without error. Moved to a top-level static require so ncc bundles it correctly.
 
-**Full peer mesh maintenance.** On every `addNode`, `removeNode`, and node promotion, the full UNL peer list is written to `patch.cfg` `mesh.known_peers` via `ctx.updateConfig()`. Previously nodes only had their single bootstrap peer in `known_peers`, meaning a cold restart with a dead bootstrap peer left the node completely isolated. `patch.cfg` is the correct persistence mechanism — hpcore reads it on startup and applies it over `hp.cfg`.
+**Full peer mesh maintenance.** On every `addNode`, `removeNode`, and node promotion, the full UNL peer list is written to `patch.cfg` `mesh.known_peers` via `ctx.updateConfig()`. Previously nodes only had their single bootstrap peer in `known_peers`, meaning a cold restart with a dead bootstrap peer left the node completely isolated.
 
-**`cluster.info` written with full UNL peer list.** Previously `cluster.info` contained only the anchor node and the new node. Now it contains all current UNL nodes, giving new nodes multiple peers to try when connecting and sending MATURED. No memo size constraint applies here — `cluster.info` is a bundle file, not a transaction memo.
+**`cluster.info` written with full UNL peer list.** Previously `cluster.info` contained only the anchor node and the new node. Now it contains all current UNL nodes, giving new nodes multiple peers to try when connecting and sending MATURED.
 
 **`checkAndPromoteMatured` updates full peer list via `ctx.updatePeers`.** After promoting a new node to UNL, all existing UNL nodes receive the complete peer list as a live update — not just the single new peer as before.
 
 ## What 1.2.2 fixed
 
-Removed the `purgePeers` handler. It used hpcore's OVERWRITE mode (`ctx.updatePeers(peers, "*")`) which clears the entire `req_known_remotes` table and closes all live peer sessions at once. When sent simultaneously to every UNL node — which is what consensus does — every node tore down every peer connection in the same round, collapsing the cluster. The handler had no safe usage pattern from a multi-node contract.
+Removed the `purgePeers` handler. It used hpcore's OVERWRITE mode (`ctx.updatePeers(peers, "*")`) which clears the entire `req_known_remotes` table and closes all live peer sessions at once. When sent simultaneously to every UNL node — which is what consensus does — every node tore down every peer connection in the same round, collapsing the cluster.
 
-The ghost-peer cleanup it was designed to address is now handled correctly and automatically by `removeNode` and `removePeer` (since 1.2.1), which use FORCE mode on a single peer at a time — surgical, safe across all nodes simultaneously. See [CHANGELOG.md](./CHANGELOG.md) for full details.
+The ghost-peer cleanup it was designed to address is now handled correctly and automatically by `removeNode` and `removePeer` (since 1.2.1), which use FORCE mode on a single peer at a time. See [CHANGELOG.md](./CHANGELOG.md) for full details.
 
 ## What 1.2.1 fixed
 
@@ -32,7 +40,7 @@ npm init -y
 npm install hotpocket-nodejs-contract@0.7.4 evernode-client-cluster-manager
 ```
 
-> The `npm init -y` step is mandatory. Without a `package.json` in the current directory, npm walks up looking for a parent project, finds one, and silently installs nothing — `node_modules/` is never created. If `npm install` reports "up to date, audited N packages" and no files appear, this is why.
+> The `npm init -y` step is mandatory. Without a `package.json` in the current directory, npm walks up looking for a parent project, finds one, and silently installs nothing — `node_modules/` is never created.
 
 Final layout:
 
@@ -71,17 +79,14 @@ hpc.init(contract);
 
 You have two paths to a running cluster:
 
-**Using the CLI tool (recommended):** [evernode-cluster-manager](https://github.com/rippleitinnz/evernode-cluster-manager) handles multi-node acquisition, bundling, deployment, live upgrades and ongoing cluster management. Point it at your contract directory when prompted for "Use my own contract directory" — the CLI runs `npm install`, ensures the correct ncc bundle is in place, and deploys.
+**Using the CLI tool (recommended):** [evernode-cluster-manager](https://github.com/rippleitinnz/evernode-cluster-manager) handles multi-node acquisition, bundling, deployment, live upgrades and ongoing cluster management.
 
-**Manual deployment with evdevkit:** if you're driving Evernode directly:
+**Manual deployment with evdevkit:**
 
 ```bash
-# Bundle and deploy the contract
 evdevkit bundle my-contract <pubkey> /usr/bin/node -a index.js
 evdevkit deploy bundle.zip <domain> <user_port>
 ```
-
-For multi-node clusters, manual deployment quickly becomes impractical — the bootstrap peer, UNL injection, and MATURED-flow timing are what the CLI tool exists to automate.
 
 ## Handlers
 
@@ -103,7 +108,7 @@ For multi-node clusters, manual deployment quickly becomes impractical — the b
 
 | Type | Description |
 |------|-------------|
-| `upgrade` | Deploy new contract bundle via base64, runs `post_exec.sh` |
+| `upgrade` | Deploy new contract bundle via base64, runs `post_exec.sh`. Supports dynamic roundtime and log level via `hp.cfg.override` |
 | `addNode` | Register a new node as non-UNL pending MATURED signal. Writes full UNL peer list to `patch.cfg` `known_peers` for cold restart resilience |
 | `removeNode` | Remove pubkey from UNL, update `patch.cfg.known_peers`, and flush hpcore's `req_known_remotes` to stop retry spam |
 | `removePeer` | Manual cleanup: flush a peer from `patch.cfg.known_peers` and `req_known_remotes` without UNL changes. Useful for orphan entries |

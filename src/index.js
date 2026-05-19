@@ -280,7 +280,14 @@ const handleUpgrade = async (user, bundleBase64, ctx, version) => {
             if (fs.existsSync(CONTRACT_CFG))
                 contractCfg = JSON.parse(fs.readFileSync(CONTRACT_CFG, 'utf8'));
             contractCfg = { ...contractCfg, ...hpCfg.contract };
-            contractCfg.log = { log_level: 'dbg' };
+            // Use log level from hp.cfg.override if provided, otherwise preserve existing or default to dbg
+            const logLevel = hpCfg.log?.log_level || contractCfg.log?.log_level || 'dbg';
+            contractCfg.log = { log_level: logLevel };
+            // Apply roundtime from hp.cfg.override if provided
+            if (hpCfg.contract?.consensus?.roundtime) {
+                if (!contractCfg.consensus) contractCfg.consensus = {};
+                contractCfg.consensus.roundtime = hpCfg.contract.consensus.roundtime;
+            }
             fs.writeFileSync(CONTRACT_CFG, JSON.stringify(contractCfg, null, 2), { mode: 0o644 });
         }
 
@@ -307,8 +314,13 @@ function rollback() {
 
 function upgrade() {
     [ -f "${CONTRACT_CFG}" ] && jq -s '.[0] * (.[1] | del(.unl))' ${PATH_CFG} ${CONTRACT_CFG} > /tmp/hp-patch-tmp.cfg && mv /tmp/hp-patch-tmp.cfg ${PATH_CFG}
-    jq '.log.log_level = "dbg"' ${PATH_CFG} > /tmp/hp-patch-tmp.cfg && mv /tmp/hp-patch-tmp.cfg ${PATH_CFG}
-    jq '.log.log_level = "dbg"' /contract/cfg/hp.cfg > /tmp/hp-cfg-tmp.cfg && mv /tmp/hp-cfg-tmp.cfg /contract/cfg/hp.cfg
+    LOG_LEVEL=$(jq -r '.log.log_level // "dbg"' ${CONTRACT_CFG} 2>/dev/null || echo "dbg")
+    ROUNDTIME=$(jq -r '.consensus.roundtime // empty' ${CONTRACT_CFG} 2>/dev/null)
+    jq --arg ll "$LOG_LEVEL" '.log.log_level = $ll' ${PATH_CFG} > /tmp/hp-patch-tmp.cfg && mv /tmp/hp-patch-tmp.cfg ${PATH_CFG}
+    jq --arg ll "$LOG_LEVEL" '.log.log_level = $ll' /contract/cfg/hp.cfg > /tmp/hp-cfg-tmp.cfg && mv /tmp/hp-cfg-tmp.cfg /contract/cfg/hp.cfg
+    if [ -n "$ROUNDTIME" ]; then
+        jq --argjson rt "$ROUNDTIME" '.contract.consensus.roundtime = $rt' ${PATH_CFG} > /tmp/hp-patch-tmp.cfg && mv /tmp/hp-patch-tmp.cfg ${PATH_CFG}
+    fi
     if [ -f "${INSTALL_SCRIPT}" ]; then
         echo "${INSTALL_SCRIPT} found. Executing..."
         chmod +x ${INSTALL_SCRIPT}
