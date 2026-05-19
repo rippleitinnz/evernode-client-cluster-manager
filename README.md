@@ -2,7 +2,7 @@
 
 Drop-in npm module that adds 14 cluster management handlers to any HotPocket contract running on Evernode. Designed for use with the [Evernode Cluster Manager](https://github.com/rippleitinnz/evernode-cluster-manager) client tool but works with any HP JS client.
 
-## What's new in 1.3.1
+## What's new in 1.3.2
 
 **Dynamic round time via `hp.cfg.override`.** When `hp.cfg.override` contains `contract.consensus.roundtime`, the upgrade handler stores it in `contract.config` and `post_exec.sh` applies it to `patch.cfg` via `jq`. hpcore reads `consensus.roundtime` dynamically from `patch.cfg` each ledger — confirmed taking effect within one consensus round on a live cluster without any container restart.
 
