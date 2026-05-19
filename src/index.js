@@ -426,7 +426,9 @@ const handleAddNode = async (user, msg, ctx, version) => {
             addPeerToPatchCfg(ip, peerPort);
         }
 
-        // Update patch.cfg known_peers with full UNL peer list for cold restart resilience
+        // Update patch.cfg known_peers with full UNL peer list for cold restart resilience.
+        // Note: checkAndPromoteMatured also calls ctx.updateConfig() after promotion to rewrite
+        // the full peer list. These are sequential (different consensus rounds), not concurrent.
         try {
             const patchCfg = await ctx.getConfig();
             if (!patchCfg.mesh) patchCfg.mesh = {};
@@ -658,7 +660,9 @@ const checkAndPromoteMatured = async (ctx) => {
             console.log(`[ClusterManager] Updated full peer mesh (${fullPeerList.length} peers): ${fullPeerList.join(', ')}`);
         }
     }
-        // Update patch.cfg known_peers after promotion for cold restart resilience
+        // Update patch.cfg known_peers after promotion for cold restart resilience.
+        // handleAddNode also writes known_peers when the node is first registered —
+        // this rewrite after promotion ensures the full updated UNL list is persisted.
         try {
             const patchCfg = await ctx.getConfig();
             if (!patchCfg.mesh) patchCfg.mesh = {};
@@ -748,6 +752,11 @@ const checkAndSendMatured = async (ctx) => {
 
     selfNode.lastAckSentLcl = now;
     selfNode.acknowledgeTries = tries + 1;
+    // Note: cluster was read from CLUSTER_INFO (cluster.info) if it existed, but is always
+    // written back to CLUSTER_JSON (cluster.json) in the state dir. On a non-UNL node,
+    // this means lastAckSentLcl and acknowledgeTries are persisted to the state-dir file,
+    // not back to cluster.info. This is correct — cluster.info is a read-only bootstrap
+    // file written at deploy time; cluster.json is the live mutable state.
     saveCluster(cluster);
 };
 
