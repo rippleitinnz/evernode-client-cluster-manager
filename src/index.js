@@ -148,8 +148,12 @@ const handleReadCfg = async (user, ctx, version) => {
 };
 
 const handleReadPatchCfg = async (user, ctx, version) => {
+    // Read raw patch.cfg from disk — ctx.getConfig() returns the merged runtime config
+    // which may differ from the file on disk (e.g. known_peers modified at runtime by hpcore).
+    // Direct file read gives the actual state of the file for diagnostic accuracy.
     try {
-        const cfg = await ctx.getConfig();
+        const raw = fs.readFileSync(PATH_CFG, 'utf8');
+        const cfg = JSON.parse(raw);
         await send(user, { type: 'readPatchCfg', version, lcl: ctx.lclSeqNo, cfg });
     } catch(e) {
         await send(user, { type: 'error', message: e.message });
@@ -291,6 +295,18 @@ const handleUpgrade = async (user, bundleBase64, ctx, version) => {
             fs.writeFileSync(CONTRACT_CFG, JSON.stringify(contractCfg, null, 2), { mode: 0o644 });
         }
 
+        // Store mesh.idle_timeout in contract.config so post_exec.sh can apply it to hp.cfg.
+        // Required for roundtimes exceeding mesh.idle_timeout * stage_slice% — peers disconnect
+        // during stage waits if idle_timeout is too low. Takes effect on next container restart
+        // until hpcore PR feat/dynamic-mesh-idle-timeout-from-patch-cfg is merged.
+        if (hpCfg.mesh?.idle_timeout) {
+            let contractCfg = {};
+            if (fs.existsSync(CONTRACT_CFG))
+                contractCfg = JSON.parse(fs.readFileSync(CONTRACT_CFG, 'utf8'));
+            if (!contractCfg.mesh) contractCfg.mesh = {};
+            contractCfg.mesh.idle_timeout = hpCfg.mesh.idle_timeout;
+            fs.writeFileSync(CONTRACT_CFG, JSON.stringify(contractCfg, null, 2), { mode: 0o644 });
+        }
         if (hpCfg.mesh?.known_peers?.length > 0) {
             await ctx.updatePeers(hpCfg.mesh.known_peers);
         }
@@ -320,6 +336,11 @@ function upgrade() {
     jq --arg ll "$LOG_LEVEL" '.log.log_level = $ll' /contract/cfg/hp.cfg > /tmp/hp-cfg-tmp.cfg && mv /tmp/hp-cfg-tmp.cfg /contract/cfg/hp.cfg
     if [ -n "$ROUNDTIME" ]; then
         jq --argjson rt "$ROUNDTIME" '.contract.consensus.roundtime = $rt' ${PATH_CFG} > /tmp/hp-patch-tmp.cfg && mv /tmp/hp-patch-tmp.cfg ${PATH_CFG}
+    fi
+    MESH_IDLE_TIMEOUT=$(jq -r '.mesh.idle_timeout // empty' ${CONTRACT_CFG} 2>/dev/null)
+    if [ -n "$MESH_IDLE_TIMEOUT" ]; then
+        jq --argjson mit "$MESH_IDLE_TIMEOUT" '.mesh.idle_timeout = $mit' ${PATH_CFG} > /tmp/hp-patch-tmp.cfg && mv /tmp/hp-patch-tmp.cfg ${PATH_CFG}
+        jq --argjson mit "$MESH_IDLE_TIMEOUT" '.mesh.idle_timeout = $mit' /contract/cfg/hp.cfg > /tmp/hp-cfg-tmp.cfg && mv /tmp/hp-cfg-tmp.cfg /contract/cfg/hp.cfg
     fi
     if [ -f "${INSTALL_SCRIPT}" ]; then
         echo "${INSTALL_SCRIPT} found. Executing..."

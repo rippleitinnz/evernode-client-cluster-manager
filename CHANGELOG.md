@@ -2,6 +2,14 @@
 
 ----
 
+## [1.3.4] — 2026-05-20
+
+### Added
+
+- **`mesh.idle_timeout` handling via `hp.cfg.override`.** When `hp.cfg.override` contains `mesh.idle_timeout` under the `mesh` section, `handleUpgrade` stores it in `contract.config` and `post_exec.sh` applies it to both `patch.cfg` and `hp.cfg` via `jq`. Required for clusters running roundtimes above `mesh.idle_timeout × stage_slice%` (default safe max: 480000ms with `mesh.idle_timeout=120000ms` and `stage_slice=25%`). Takes effect on next container restart. A hpcore PR ([EvernodeXRPL/hpcore#414](https://github.com/EvernodeXRPL/hpcore/pull/414)) has been raised to allow dynamic `mesh.idle_timeout` change without restart.
+
+---
+
 ## [1.3.2] — 2026-05-19
 
 ### Added
